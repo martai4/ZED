@@ -1,0 +1,400 @@
+---
+title: "projekt 1"
+author: "Marta Bodzak 145298"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    toc: yes
+    toc_float: true
+    theme: readable
+    number_sections: yes
+  word_document: default
+  pdf_document: default
+---
+
+```{r,echo=FALSE, message=FALSE, warning=F}
+  library(knitr)
+  opts_chunk$set(message=F, warning=F)
+```
+
+# Podsumowanie analizy
+Z każdym rokiem ceny zestawów rosną. 
+
+Jest to kluczowa obserwacja dla wytrenowanego modelu. Na jego podstawie można wymyśleć własny zestaw i przewidzieć w jakim roku mogłaby być jego cena.
+
+# Kod wyliczający wykorzystane biblioteki.
+
+```{r, message=FALSE, warning=F}
+  library(knitr)
+  library(readr)
+  library(dplyr)
+  library(ggplot2)
+  library(DT)
+  library(plotly)
+  library(caret)
+```
+
+# Kod zapewniający powtarzalność wyników przy każdym uruchomieniu raportu na tych samych danych.
+
+```{r, message=FALSE, warning=F}
+  set.seed(123)
+```
+
+# Kod pozwalający wczytać dane z plików.
+
+```{r, message=FALSE, warning=F}
+  data_files <- c("inventories", "inventory_parts", "parts", "part_categories", "part_relationships", "elements", "colors", "inventory_minifigs", "minifigs", "inventory_sets", "sets", "themes")
+data_list <- lapply(data_files, function(x) read_csv(paste0("Data/", x, ".csv")))
+
+```
+
+# Kod przetwarzający brakujące dane.
+
+```{r, message=FALSE, warning=F}
+additional_data <- read_csv("Data/Brickset-Sets.csv")
+
+```
+
+# Sekcję podsumowującą rozmiar zbioru i podstawowe statystyki.
+
+```{r, echo=FALSE, message=FALSE, warning=F,results='asis'}
+for (i in seq_along(data_files)) {
+  cat(paste0("\n## ", data_files[i], "\n"))
+  cat(paste0("\n### ", "Rozmiar zbioru:", "\n"))
+  print(dim(data_list[[i]]))
+  cat(paste0("\n### ", "Podstawowe statystyki:", "\n"))
+  for (j in names(data_list[[i]])) {
+    cat(paste0("\n#### ", j, "\n"))
+    summary_output <- capture.output(print(summary(data_list[[i]][,j])))
+    cat(summary_output[-1], sep="\n")
+  }
+  cat("\n\n")
+}
+
+```
+
+# Szczegółową analizę wartości atrybutów (np. poprzez prezentację rozkładów wartości).
+
+## inventories
+
+### Wykres
+
+```{r echo=FALSE, message=FALSE, warning=F}
+
+#print(data_list[[1]])
+data_list[[1]] %>%
+  count(set_num) %>%
+  filter(n > 1) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = reorder(set_num, -n), y = n)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_blank()) +
+  labs(title = "Ilość zduplikowanych 'set_num'", x = 'set_num', y = "Liczba")
+
+stats <- data_list[[1]] %>%
+  count(set_num) %>%
+  summarise(P99 = quantile(n, 0.99))
+
+cutoff <- stats$P99
+
+prettyTable <- function(table_df) {
+  DT::datatable(table_df, style="bootstrap", filter = "top", rownames = FALSE, extensions = "Buttons", options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+}
+
+```
+
+### 99. percentyl dla liczby wystąpień 'set_num'
+
+```{r echo=FALSE, message=FALSE, warning=F}
+data_list[[1]] %>%
+  count(set_num) %>%
+  filter(n > cutoff) %>%
+  arrange(desc(n)) %>%
+  prettyTable()
+```
+
+## Zapasy klocków w kolorach (inventory_parts i colors)
+
+### 90. percentyl dla liczby wystąpień (color)'name'
+
+```{r echo=FALSE, message=FALSE, warning=F}
+colors <- data_list[[7]]
+inventory_parts <- data_list[[2]]
+
+data_combined <- inventory_parts %>%
+  left_join(colors, by = c("color_id" = "id"))
+
+data_for_cutoff <- data_combined %>%
+  group_by(name) %>%
+  summarise(total_quantity = sum(quantity)) %>%
+  summarise(P90 = quantile(total_quantity, 0.9))
+
+cutoff <- data_for_cutoff$P90
+
+data_combined %>%
+  group_by(name) %>%
+  summarise(total_quantity = sum(quantity)) %>%
+  filter(total_quantity > cutoff) %>%
+  arrange(desc(total_quantity)) %>%
+  ggplot(aes(x = reorder(name, -total_quantity), y = total_quantity)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Ilość dla każdego (color)'name'", x = 'color_name', y = "liczba")
+```
+
+## Skład części klocków lego (parts)
+
+```{r echo=FALSE, message=FALSE, warning=F}
+data_list[[3]] %>%
+  group_by(part_material) %>%
+  summarise(quantity = n()) %>%
+  arrange(desc(quantity)) %>%
+  ggplot(aes(x = reorder(part_material, -quantity), y = quantity)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "ilość dla każdego 'part_material'", x = 'part_material', y = "Ilość")
+
+```
+
+## Pojedyńcze klocki w kolorach (elements i colors)
+
+### 90. percentyl dla liczby wystąpień (color)'name'
+
+```{r echo=FALSE, message=FALSE, warning=F}
+colors <- data_list[[7]]
+elements <- data_list[[6]]
+
+data_combined <- elements %>%
+  left_join(colors, by = c("color_id" = "id"))
+
+data_for_cutoff <- data_combined %>%
+  group_by(name) %>%
+  summarise(quantity = n()) %>%
+  summarise(P90 = quantile(quantity, 0.9))
+
+cutoff <- data_for_cutoff$P90
+
+data_combined %>%
+  group_by(name) %>%
+  summarise(quantity = n()) %>%
+  filter(quantity > cutoff) %>%
+  arrange(desc(quantity)) %>%
+  ggplot(aes(x = reorder(name, -quantity), y = quantity)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Ilość dla każdego (color)'name'", x = 'color_name', y = "Ilość")
+```
+
+## Zapasy klocków na podstawie zestawów (inventory_sets i sets)
+
+### 98. percentyl dla liczby wystąpień 'set_name'
+
+```{r echo=FALSE, message=FALSE, warning=F}
+
+inventory_sets <- data_list[[10]]
+sets <- data_list[[11]]
+
+data_combined <- inventory_sets %>%
+  left_join(sets, by = c("set_num" = "set_num"))
+
+data_for_cutoff <- data_combined %>%
+  group_by(name) %>%
+  summarise(total_quantity = sum(quantity)) %>%
+  summarise(P90 = quantile(total_quantity, 0.98))
+
+cutoff <- data_for_cutoff$P90
+
+data_combined %>%
+  group_by(name) %>%
+  summarise(total_quantity = sum(quantity)) %>%
+  filter(total_quantity > cutoff) %>%
+  arrange(desc(total_quantity)) %>%
+  ggplot(aes(x = reorder(name, -total_quantity), y = total_quantity)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Suma 'quantity' dla każdego zestawu", x = 'Nazwa zestawu', y = "Suma quantity")
+
+
+```
+
+## Dostępne zestawy na podstawie kategorii zestawów (sets i themes)
+
+### 90. percentyl dla liczby wystąpień (themes)'name'
+
+```{r echo=FALSE, message=FALSE, warning=F}
+
+themes <- data_list[[12]]
+sets <- data_list[[11]]
+
+data_combined <- sets %>%
+  left_join(themes, by = c("theme_id" = "id"))
+
+data_for_cutoff <- data_combined %>%
+  group_by(name.x) %>%
+  summarise(total_quantity = sum(num_parts)) %>%
+  summarise(P90 = quantile(total_quantity, 0.999))
+
+cutoff <- data_for_cutoff$P90
+
+data_combined %>%
+  group_by(name.x) %>%
+  summarise(total_quantity = sum(num_parts)) %>%
+  filter(total_quantity > cutoff) %>%
+  arrange(desc(total_quantity)) %>%
+  ggplot(aes(x = reorder(name.x, -total_quantity), y = total_quantity)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Suma 'quantity' dla każdej kategorii", x = 'Nazwa kategorii', y = "Suma quantity")
+
+```
+
+## Średnia cena zestawów według zestawów(Brickset-Sets i sets)
+
+### 99. percentyl dla liczby wystąpień 'set_name'
+
+```{r echo=FALSE, message=FALSE, warning=F}
+
+sets <- data_list[[11]]
+
+data_combined <- additional_data %>%
+  inner_join(sets, by = c("Number" = "set_num"))
+
+data_for_cutoff <- data_combined %>%
+  group_by(name) %>%
+  summarise(avg_price = mean(`RRP (EUR)`, na.rm = TRUE)) %>%
+  summarise(P90 = quantile(avg_price, 0.99, na.rm = TRUE))
+
+cutoff <- data_for_cutoff$P90
+
+data_combined %>%
+  group_by(name) %>%
+  summarise(avg_price = mean(`RRP (EUR)`, na.rm = TRUE)) %>%
+  filter(avg_price > cutoff) %>%
+  arrange(desc(avg_price)) %>%
+  ggplot(aes(x = reorder(name, -avg_price), y = avg_price)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Średnia cena dla każdego zestawu", x = 'Nazwa zestawu', y = "Średnia cena")
+
+```
+
+# Sekcję sprawdzającą korelacje między zmiennymi; sekcja ta powinna zawierać jakąś formę graficznej prezentacji korelacji.
+
+```{r echo=FALSE, message=FALSE, warning=F}
+ggplot(data_combined, aes(x=name, y=`RRP (EUR)`, color=`RRP (EUR)`)) +
+  geom_point(alpha = 0.4) +
+  scale_color_gradient(low = "green", high = "red") +
+  theme_bw() +
+  labs(title = "Korelacja między nazwą zestawu a ceną", x = 'Nazwa zestawu', y = "Cena")
+
+ggplot(data_combined, aes(x=year, y=`RRP (EUR)`, color=`RRP (EUR)`)) +
+  geom_point(alpha = 0.2) +
+  scale_color_gradient(low = "green", high = "red") +
+  theme_bw() +
+  labs(title = "Korelacja między rokiem a ceną", x = 'Rok', y = "Cena")
+
+```
+
+# Interaktywne wykresy lub animacje.
+
+```{r echo=FALSE, message=FALSE, warning=F}
+p<-data_list[[3]] %>%
+  group_by(part_material) %>%
+  summarise(quantity = n()) %>%
+  arrange(desc(quantity)) %>%
+  ggplot(aes(x = reorder(part_material, -quantity), y = quantity)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "ilość dla każdego 'part_material'", x = 'part_material', y = "Ilość")
+p_interactive <- ggplotly(p)
+p_interactive
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=F}
+
+p <- ggplot(data_combined, aes(x=year, y=`RRP (EUR)`, color=`RRP (EUR)`)) +
+  geom_point(alpha = 0.2) +
+  theme_bw() +
+  scale_color_gradient(low = "green", high = "red") +
+  labs(title = "Korelacja między rokiem a ceną", x = 'Rok', y = "Cena")
+
+p_interactive <- ggplotly(p)
+p_interactive
+
+```
+
+
+# Sekcję próbującą podsumować najważniejsze trendy w rozwoju Lego na przestrzeni.
+Najwięcej jest klocków w kolorze czarnym, co odpowiada też zapasom klocków o tym kolorze.
+Najwięcej dostępnych zestawów jest z kategorii Millennium Falcon. Na drugiej pozycji znajduje ię Taj Mahal.
+Średnio najdroższym zestawem (z najpopularniejszych) jest liebhner Crawler Crane LR 13000.
+Znacząca większość klocków jest produkowana z plastiku. Są też klocki zrobione z Kartonu i papieru, materiału, gumy i w niektórych przypadkach z piany, rozciągliwego plastiku oraz metalu.
+Z każdym rokiem ceny zestawów rosną.
+# Sekcję próbującą przewidzieć dalsze cechy zestawów Lego.
+```{r echo=FALSE, message=FALSE, warning=F}
+sets <- data_list[[11]]
+
+data_combined <- additional_data %>%
+  inner_join(sets, by = c("Number" = "set_num"))
+
+data_combined <- data_combined %>%
+  filter(!is.na(`RRP (EUR)`)) %>%
+  mutate(Sales_duration = as.numeric(difftime(`Exit date`, `Launch date`, units = "days")))
+
+selected_data <- data_combined %>%
+  select(Year, Minifigs, Pieces, Width, Height, Depth, Weight, Sales_duration, `RRP (EUR)`)
+
+selected_data<- na.omit(selected_data)
+
+trainIndex <- createDataPartition(selected_data$`RRP (EUR)`, p = .8, list = FALSE)
+train_set <- selected_data[ trainIndex,]
+test_set  <- selected_data[-trainIndex,]
+
+ctrl <- trainControl(method = "cv", number = 10)
+fit <- train(`RRP (EUR)` ~ ., data = train_set, method = "lm", trControl = ctrl)
+fit
+
+predictions <- predict(fit, newdata = test_set)
+
+postResample(pred = predictions, obs = test_set$`RRP (EUR)`)
+
+```
+
+## Przewidywanie cen dla zestawu Mandalorian Battle Pack, gdyby został wydany w innych latach
+
+```{r echo=FALSE, message=FALSE, warning=F}
+future_years <- data.frame(Year = 2024:2030)
+
+future_sets <- data.frame(
+  Year = future_years$Year,
+  Minifigs = 4,
+  Pieces = 102,
+  Width = 19.1,
+  Height = 14.1,
+  Depth = 4.6,
+  Weight = 0.12,
+  Sales_duration = 730
+)
+
+future_sets$predicted_RRP_EUR <- predict(fit, newdata = future_sets)
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=F}
+ggplot(future_sets, aes(x = Year, y = predicted_RRP_EUR)) +
+  geom_line(color = "blue") +
+  geom_point(color = "red") +
+  labs(title = "Przewidywana cena zestawu LEGO w latach 2024-2030",
+       x = "Rok",
+       y = "Przewidywana cena (EUR)")
+```
+
+
