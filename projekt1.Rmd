@@ -81,7 +81,6 @@ for (i in seq_along(data_files)) {
 
 ```{r echo=FALSE, message=FALSE, warning=F}
 
-#print(data_list[[1]])
 data_list[[1]] %>%
   count(set_num) %>%
   filter(n > 1) %>%
@@ -389,12 +388,16 @@ future_sets$predicted_RRP_EUR <- predict(fit, newdata = future_sets)
 ```
 
 ```{r echo=FALSE, message=FALSE, warning=F}
-ggplot(future_sets, aes(x = Year, y = predicted_RRP_EUR)) +
+p <-ggplot(future_sets, aes(x = Year, y = predicted_RRP_EUR)) +
   geom_line(color = "blue") +
   geom_point(color = "red") +
+  theme_bw() +
   labs(title = "Przewidywana cena zestawu LEGO w latach 2024-2030",
        x = "Rok",
        y = "Przewidywana cena (EUR)")
+
+p_interactive <- ggplotly(p)
+p_interactive
 ```
 
 
